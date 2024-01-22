@@ -3,100 +3,92 @@
 ####################################
 # Author: MohammadReza Rasi
 # Created: 2023-09-22
-# Last Modified: 2023-09-23
+# Last Modified: 2024-01-22
 # Description: 
-# Usage: bash p1.sh
+# Usage: bash InitialSettings.sh <conf file address>
 ####################################
 
-check_action3=0
-
-action1(){
+update_sources_file(){
     if [[ -f $SOURCES_PATH ]]; then
-        cp $SOURCES_PATH /etc/apt/sources.list
+        sudo cp $SOURCES_PATH /etc/apt/sources.list
         echo "The sources.list file was updated"
     else
         echo "Please create the sources.list file."
     fi
 }
 
-action2(){
-    if [[ check_action3 -eq 1 ]]; then
-        echo "    dns-nameservers $NAMESERVER1 $NAMESERVER2" >> /etc/network/interfaces
+change_nameserver(){
+    echo "nameserver $NAMESERVER1" | sudo tee /etc/resolv.conf
+    sudo systemctl restart networking
+    echo "dns-nameservers was updated"
+}
 
-        systemctl restart networking
+change_ip_and_gateway_and_dns_nameservers() {
+    cat <<EOF | sudo tee /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
 
-        echo "The interfaces file was updated"
+# source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto enp0s3
+iface enp0s3 inet static
+    address $IP
+    gateway $GATEWAY
+    dns-nameservers $NAMESERVER1 $NAMESERVER2
+EOF
+
+    sudo systemctl restart networking
+    echo "The interfaces file was updated"
+}
+
+change_network_time() {
+    # Check if the entry already exists in the ntp.conf file
+    if ! grep -q "pool $NTPSERVER1 iburst" /etc/ntp.conf; then
+    
+        sudo apt update
+        sudo apt install -y ntp
+        # sed -i '23d' /etc/ntp.conf
+        echo -e "\npool $NTPSERVER1 iburst" | sudo tee -a /etc/ntp.conf
+
+        sudo systemctl restart ntp
+        echo -e "\nThe ntp.conf file was updated"
     else
-        echo "Please do the action3 first and then do this action again"
+        # If the entry already exists, inform the user
+        echo "The ntp.conf file already contains the specified NTP server entry"
     fi
 }
 
-action3(){
-    echo "# This file describes the network interfaces available on your system" > /etc/network/interfaces
-    echo "# and how to activate them. For more information, see interfaces(5)." >> /etc/network/interfaces
-    echo "" >> /etc/network/interfaces
-    echo "# source /etc/network/interfaces.d/*" >> /etc/network/interfaces
-    echo "" >> /etc/network/interfaces
-    echo "# The loopback network interface" >> /etc/network/interfaces
-    echo "auto lo" >> /etc/network/interfaces
-    echo "iface lo inet loopback" >> /etc/network/interfaces
-    echo "" >> /etc/network/interfaces
-    echo "auto enp0s3" >> /etc/network/interfaces
-    echo "iface enp0s3 inet static" >> /etc/network/interfaces
-    echo "    address $IP" >> /etc/network/interfaces
-    echo "    gateway $GATEWAY" >> /etc/network/interfaces
-
-    systemctl restart networking
-
-    echo "The interfaces file was updated"
-
-    check_action3=1
-}
-
-action4(){
-    apt install ntp
-    # sed -i '23d' /etc/ntp.conf
-    echo "" >> /etc/ntp.conf
-    echo "pool $NTPSERVER1 iburst" >> /etc/ntp.conf
-
-    systemctl restart ntp
-    echo ""
-    echo "The ntp.conf file was updated"
-}
-
-action5(){
+create_new_user(){
     if id $NEW_USER_NAME &>/dev/null; then
         echo "User $NEW_USER_NAME already exists."
     else
-        useradd $NEW_USER_NAME
+        sudo useradd $NEW_USER_NAME
         echo "$NEW_USER_NAME user created successfully"
 
-        echo "$NEW_USER_NAME:$NEW_USER_PASSWORD" | chpasswd
+        echo "$NEW_USER_NAME:$NEW_USER_PASSWORD" | sudo chpasswd
         echo "The password for the $NEW_USER_NAME user has been applied successfully"
 
-        chage -M $NEW_USER_PASSWORD_EXPIRES_DAY $NEW_USER_NAME
+        sudo chage -M $NEW_USER_PASSWORD_EXPIRES_DAY $NEW_USER_NAME
         echo "Password expiration date applied for $NEW_USER_PASSWORD_EXPIRES_DAY days"
 
         local now=$(date +'%Y-%m-%d')
         local one_month_later=$(date -d "$now +$NEW_USER_ACCOUNT_EXPIRES_MONTH month" +%Y-%m-%d)
-        chage -E $one_month_later $NEW_USER_NAME
+        sudo chage -E $one_month_later $NEW_USER_NAME
         echo "Account expiration date applied for $NEW_USER_ACCOUNT_EXPIRES_MONTH month"
     fi
 }
 
-action6(){
-    # echo "root:$NEW_ROOT_PASSWORD" | chpasswd
-    # echo "The password for the root user has been applied successfully"
-    passwd root
+change_root_pass(){
+    echo "root:$NEW_ROOT_PASSWORD" | sudo chpasswd
+    echo "The password for the root user has been applied successfully"
+    # passwd root
 }
 
-action7(){
-    apt install git
-    echo ""
-    echo "The git has been successfully installed"
-}
-
-action8(){
+find_processes(){
     local pid=""
     for ((i = 1; i < $PID_NUMBER_LESS_THAN; i++)); do
         user=$(ps -o user -p $i --no-header)
@@ -110,81 +102,83 @@ action8(){
     echo ""
 }
 
-action9(){
-    apt install openssh-server
-    systemctl start ssh
-    systemctl enable ssh
+install_ssh(){
+    sudo apt install -y openssh-server
+    sudo systemctl start ssh
+    sudo systemctl enable ssh
 
-    apt install ufw
-    ufw allow ssh
-    ufw enable
+    sudo apt install -y ufw
+    sudo ufw allow ssh
+    sudo ufw enable
 
-    echo ""
-    echo "ssh configuration is done successfully"
+    echo -e "\nssh configuration is done successfully"
 }
 
-action10(){
-    echo "#!/usr/sbin/nft -f" > /etc/nftables.conf
-    echo "" >> /etc/nftables.conf
-    echo "flush ruleset" >> /etc/nftables.conf
-    echo "" >> /etc/nftables.conf
-    echo "table ip filter {" >> /etc/nftables.conf
-    echo "    chain input {" >> /etc/nftables.conf
-    echo "        type filter hook input priority 0; policy drop;" >> /etc/nftables.conf
-    echo "        iif lo accept" >> /etc/nftables.conf
-    echo "        tcp dport 22 accept" >> /etc/nftables.conf
-    echo "    }" >> /etc/nftables.conf
-    echo "    chain forward {" >> /etc/nftables.conf
-    echo "        type filter hook forward priority 0; policy drop;" >> /etc/nftables.conf
-    echo "    }" >> /etc/nftables.conf
-    echo "    chain output {" >> /etc/nftables.conf
-    echo "        type filter hook output priority 0; policy drop;" >> /etc/nftables.conf
-    echo "        ct state established,related accept" >> /etc/nftables.conf
-    echo "    }" >> /etc/nftables.conf
-    echo "}" >> /etc/nftables.conf
+Configure_nftable() {
+    local nft_conf="/etc/nftables.conf"
 
-    # nft -f /etc/nftables.conf
+    cat <<EOF | sudo tee $nft_conf
+#!/usr/sbin/nft -f
 
-    # systemctl restart nftables
-    # systemctl enable nftables
+flush ruleset
 
-    echo "nft firewall successfully configured."
+table ip filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iif lo accept
+        ct state established,related accept
+        tcp dport 22 accept
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}
+EOF
+
+    # Load the configuration using nft
+    sudo nft -f "$nft_conf"
+
+    # Restart and enable nftables service
+    sudo systemctl restart nftables
+    sudo systemctl enable nftables
+
+    echo -e "\nnft firewall successfully configured."
 }
 
-if [[ $USER != "root" ]];then
-    echo "Please switch to root user and run the file again."
-    sleep 2
-    clear
+
+if [[ "$#" -eq 0 ]]; then
+    echo "Usage: $0 <conf file address>"
     exit 1
 fi
 
-if [[ -f conf.env ]]; then
-    source conf.env
+if [[ -f "$1" ]]; then
+    source $1
+    echo "The conf file has been loaded"
 else
-    echo "peyda nashod"
+    echo "Conf file not found"
     exit 1
 fi
 
-action1
+update_sources_file
 sleep 1
-action3
+change_nameserver
 sleep 1
-action2
+change_ip_and_gateway_and_dns_nameservers
 sleep 1
-action4
+change_network_time
 sleep 1
-action5
+create_new_user
 sleep 1
-action6
+change_root_pass
 sleep 1
-action7
+find_processes
 sleep 1
-action8
+install_ssh
 sleep 1
-action9
+Configure_nftable
 sleep 1
-action10
-sleep 1
-
-
-echo "movafaghiat"
